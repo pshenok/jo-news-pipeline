@@ -1,0 +1,8 @@
+dagster==1.5.10
+dagster-webserver==1.5.10
+dagster-postgres==0.21.10
+psycopg2-binary==2.9.9
+requests==2.31.0
+python-dotenv==1.0.0
+beautifulsoup4==4.12.2
+lxml==4.9.3
