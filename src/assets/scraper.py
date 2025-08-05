@@ -62,12 +62,15 @@ def raw_press_releases(context: AssetExecutionContext) -> MaterializeResult:
             if result['success']:
                 parsed = scraper.parse_content(result['content'], url)
                 
+                # Extract published date if available
+                published_at = parsed.get('published_at')
+                
                 with postgres.get_connection() as conn:
                     with conn.cursor() as cursor:
                         cursor.execute("""
                             INSERT INTO raw_data.press_releases 
-                            (url, url_hash, title, content, raw_response)
-                            VALUES (%s, %s, %s, %s, %s)
+                            (url, url_hash, title, content, published_at, raw_response)
+                            VALUES (%s, %s, %s, %s, %s, %s)
                             ON CONFLICT (url) DO NOTHING
                             RETURNING id
                         """, (
@@ -75,16 +78,19 @@ def raw_press_releases(context: AssetExecutionContext) -> MaterializeResult:
                             result['url_hash'],
                             parsed['title'][:500] if parsed['title'] else 'No title',
                             parsed['content'][:5000] if parsed['content'] else 'No content',
+                            published_at,  # This can be None if not found
                             json.dumps({
                                 'url': url,
                                 'scraped_at': result.get('scraped_at'),
-                                'title': parsed['title'][:100] if parsed['title'] else None
+                                'title': parsed['title'][:100] if parsed['title'] else None,
+                                'published_at': published_at.isoformat() if published_at else None
                             })
                         ))
                         
                         inserted_id = cursor.fetchone()
                         if inserted_id:
                             scraped += 1
+                            context.log.info(f"✓ Scraped: {parsed['title'][:80]}...")
             else:
                 errors += 1
                 context.log.error(f"Failed to scrape {url}: {result.get('error')}")
@@ -93,10 +99,30 @@ def raw_press_releases(context: AssetExecutionContext) -> MaterializeResult:
             errors += 1
             context.log.error(f"Exception for {url}: {str(e)}")
     
+    # Get some statistics
     with postgres.get_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute("SELECT COUNT(*) FROM raw_data.press_releases")
             total_count = cursor.fetchone()[0]
+            
+            cursor.execute("""
+                SELECT COUNT(*) FROM raw_data.press_releases 
+                WHERE published_at >= NOW() - INTERVAL '30 days'
+            """)
+            recent_count = cursor.fetchone()[0]
+            
+            cursor.execute("""
+                SELECT url, title, published_at 
+                FROM raw_data.press_releases 
+                ORDER BY published_at DESC NULLS LAST 
+                LIMIT 5
+            """)
+            latest = cursor.fetchall()
+            
+            context.log.info("Latest press releases in DB:")
+            for url, title, pub_date in latest:
+                date_str = pub_date.strftime("%Y-%m-%d") if pub_date else "Unknown"
+                context.log.info(f"  - {date_str}: {title[:60]}...")
     
     return MaterializeResult(
         metadata={
@@ -105,6 +131,8 @@ def raw_press_releases(context: AssetExecutionContext) -> MaterializeResult:
             "new_urls": len(new_urls),
             "scraped": scraped,
             "errors": errors,
-            "total_in_db": total_count
+            "total_in_db": total_count,
+            "recent_releases": recent_count,
+            "success_rate": f"{(scraped/len(new_urls)*100):.1f}%" if new_urls else "N/A"
         }
     )
