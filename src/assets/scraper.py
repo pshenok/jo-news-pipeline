@@ -4,20 +4,17 @@ import hashlib
 from datetime import datetime
 from dagster import asset, AssetExecutionContext, MaterializeResult
 
+
 @asset(
     required_resource_keys={"postgres", "scraper"}
 )
 def raw_press_releases(context: AssetExecutionContext) -> MaterializeResult:
-    """Scrape SEC press releases and store in PostgreSQL."""
-    
     postgres = context.resources.postgres
     scraper = context.resources.scraper
     
-    # Get limit from environment variable
     scraper_limit = int(os.getenv("SCRAPER_LIMIT", "10"))
     context.log.info(f"Scraper limit set to: {scraper_limit}")
     
-    # First, ensure table exists
     with postgres.get_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute("""
@@ -35,7 +32,6 @@ def raw_press_releases(context: AssetExecutionContext) -> MaterializeResult:
                 );
             """)
     
-    # Get URLs with configurable limit
     urls = scraper.get_sec_urls(limit=scraper_limit)
     context.log.info(f"Found {len(urls)} URLs to process")
     
@@ -44,7 +40,6 @@ def raw_press_releases(context: AssetExecutionContext) -> MaterializeResult:
             metadata={"message": "No URLs found"}
         )
     
-    # Check existing URLs
     existing = set()
     with postgres.get_connection() as conn:
         with conn.cursor() as cursor:
@@ -57,7 +52,6 @@ def raw_press_releases(context: AssetExecutionContext) -> MaterializeResult:
     new_urls = [url for url in urls if hashlib.sha256(url.encode()).hexdigest() not in existing]
     context.log.info(f"Found {len(new_urls)} new URLs to scrape")
     
-    # Scrape and save
     scraped = 0
     errors = 0
     
@@ -90,24 +84,19 @@ def raw_press_releases(context: AssetExecutionContext) -> MaterializeResult:
                         
                         inserted_id = cursor.fetchone()
                         if inserted_id:
-                            context.log.info(f"✓ Inserted record ID: {inserted_id[0]} for {url}")
                             scraped += 1
-                        else:
-                            context.log.info(f"! Skipped (already exists): {url}")
             else:
                 errors += 1
-                context.log.error(f"✗ Failed to scrape {url}: {result.get('error')}")
+                context.log.error(f"Failed to scrape {url}: {result.get('error')}")
                 
         except Exception as e:
             errors += 1
-            context.log.error(f"✗ Exception for {url}: {str(e)}")
+            context.log.error(f"Exception for {url}: {str(e)}")
     
-    # Final count
     with postgres.get_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute("SELECT COUNT(*) FROM raw_data.press_releases")
             total_count = cursor.fetchone()[0]
-            context.log.info(f"Total records in database: {total_count}")
     
     return MaterializeResult(
         metadata={

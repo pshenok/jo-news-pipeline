@@ -1,13 +1,17 @@
 import os
-import psycopg2
 from contextlib import contextmanager
+from typing import Iterator
+
+import psycopg2
 from dagster import ConfigurableResource
+from psycopg2.extras import RealDictCursor
+from sqlalchemy import create_engine
+from sqlalchemy.engine import Engine
+
 
 class PostgresResource(ConfigurableResource):
-    """PostgreSQL database resource."""
-    
     @contextmanager
-    def get_connection(self):
+    def get_connection(self) -> Iterator[psycopg2.extensions.connection]:
         conn = psycopg2.connect(
             host=os.getenv("POSTGRES_HOST", "postgres"),
             port=5432,

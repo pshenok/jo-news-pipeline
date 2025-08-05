@@ -21,6 +21,30 @@ services:
       timeout: 5s
       retries: 5
 
+  ollama:
+    image: ollama/ollama:latest
+    container_name: jo-news-ollama
+    ports:
+      - "11434:11434"
+    expose:
+      - 11434
+    volumes:
+      - ./ollama:/root/.ollama
+    entrypoint: ["/bin/sh", "-c"]
+    environment:
+      - OLLAMA_MODEL=${LLM_MODEL}
+    command: >
+      "ollama serve &
+      sleep 10 &&
+      ollama pull ${LLM_MODEL} &&
+      wait"
+    env_file:
+     - .env
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+
   dagster:
     build: .
     container_name: jo-news-dagster
@@ -33,9 +57,29 @@ services:
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
       SCRAPER_LIMIT: ${SCRAPER_LIMIT}
+      OLLAMA_HOST: ollama
+      OLLAMA_PORT: 11434
+      LLM_MODEL: ${LLM_MODEL}
     ports:
       - "${DAGSTER_PORT}:3000"
     volumes:
       - ./dagster_home:/opt/dagster/home
       - ./src:/app/src
     command: ["dagster", "dev", "-h", "0.0.0.0", "-p", "3000", "-m", "src.definitions"]
+
+  api:
+    build: .
+    container_name: jo-news-api
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./src:/app/src
+    command: ["uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

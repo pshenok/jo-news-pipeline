@@ -5,3 +5,8 @@ dagster_home/
 postgres_data/
 .DS_Store
 setup.sh
+# Ollama model files
+ollama/
+
+# Ollama model files
+ollama/
