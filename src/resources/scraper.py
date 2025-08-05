@@ -6,8 +6,6 @@ from dagster import ConfigurableResource, get_dagster_logger
 from bs4 import BeautifulSoup
 
 class ScraperResource(ConfigurableResource):
-    """ScrapingBee web scraper for SEC."""
-    
     def scrape_url(self, url: str, render_js: bool = False):
         logger = get_dagster_logger()
         api_key = os.getenv("SCRAPER_API_KEY", "")
@@ -139,7 +137,6 @@ class ScraperResource(ConfigurableResource):
         return urls[:limit]
     
     def parse_content(self, html, url):
-        """Parse SEC press release content."""
         soup = BeautifulSoup(html, 'html.parser')
         
         # Remove scripts and styles
